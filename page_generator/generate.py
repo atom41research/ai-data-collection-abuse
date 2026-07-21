@@ -35,15 +35,15 @@ def _callback_url(callback: str) -> str:
     parsed = urlsplit(callback if "://" in callback else f"https://{callback}")
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("--callback must be an HTTP(S) URL or hostname")
-    if (parsed.username or parsed.password or parsed.query or parsed.fragment
-            or parsed.path not in ("", "/")):
-        raise ValueError("--callback must contain only a controlled host and optional port")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("--callback must not contain credentials, a query, or a fragment")
     try:
         port = parsed.port
     except ValueError as exc:
         raise ValueError("--callback contains an invalid port") from exc
     host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
-    return f"{parsed.scheme}://{host}{f':{port}' if port else ''}"
+    path = quote(parsed.path.rstrip("/"), safe="/:@-._~!$&()*+,;=%")
+    return f"{parsed.scheme}://{host}{f':{port}' if port else ''}{path}"
 
 
 def _callback_host(callback: str) -> str:
@@ -145,7 +145,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--payload-position", choices=("query", "path"), default="query")
     parser.add_argument("--payload-param", default="ai_bot_poc")
     parser.add_argument("--callback", default="",
-                        help="Controlled callback URL/host for an OOB marker")
+                        help="Controlled callback hostname or URL; bare hosts use HTTPS")
     parser.add_argument("--token", help="Fixed experiment token (random by default)")
     parser.add_argument("--title", default="Authorized AI crawler test")
     parser.add_argument("--output", type=Path, default=Path("poc.html"))

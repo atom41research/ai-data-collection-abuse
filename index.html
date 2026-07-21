@@ -4,75 +4,113 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Generate bounded pages for authorized AI crawler research.">
-  <title>AI crawler test-page generator</title>
+  <title>AI crawler attack-vector generator</title>
   <style>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { max-width: 72rem; margin: 2rem auto; padding: 0 1rem 3rem; }
+    body { max-width: 54rem; margin: 2rem auto; padding: 0 1rem 3rem; }
     form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
     label { display: grid; gap: .35rem; font-weight: 600; }
-    .wide, .actions, #error { grid-column: 1 / -1; }
+    .wide, .actions, #error, details { grid-column: 1 / -1; }
     input, select, textarea, button { font: inherit; padding: .6rem; }
     textarea { min-height: 5rem; resize: vertical; }
     button { cursor: pointer; }
+    fieldset { border: 1px solid #8888; border-radius: .4rem; padding: 1rem; }
+    legend, .vector-groups h2 { font-weight: 700; }
+    .vector-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+    .vector-groups h2 { font-size: 1rem; margin: 0 0 .7rem; }
+    .vector-option { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: .15rem .5rem; margin-top: .65rem; cursor: pointer; }
+    .vector-option input { grid-row: 1 / 3; margin-top: .15rem; }
+    .vector-option small { color: #666; }
+    details { border: 1px solid #8888; border-radius: .4rem; padding: .8rem; }
+    summary { cursor: pointer; font-weight: 700; }
+    .advanced { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
     .actions { display: flex; gap: .6rem; flex-wrap: wrap; }
     #error { color: #c62828; min-height: 1.5rem; }
     #output { min-height: 14rem; width: 100%; box-sizing: border-box; }
     iframe { width: 100%; min-height: 18rem; border: 1px solid #8888; background: white; }
     small { font-weight: 400; }
-    @media (max-width: 45rem) { form { grid-template-columns: 1fr; } }
+    #results { margin-top: 2rem; }
+    #results details { margin-top: 1rem; }
+    [hidden] { display: none !important; }
+    @media (max-width: 45rem) { form, .advanced, .vector-groups { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <h1>AI crawler test-page generator</h1>
-  <p>Everything runs in this browser. No requests are sent to target URLs.</p>
+  <h1>AI crawler attack-vector generator</h1>
+  <p>Generate a bounded static test page. Everything runs locally in this browser.</p>
 
   <form id="generator">
     <label class="wide">Authorized target URLs, one per line
       <textarea id="targets" required>https://owned.example.test/resource</textarea>
     </label>
-    <label>Number of links
+    <fieldset id="payload" class="wide">
+      <legend>Attack vector</legend>
+      <div class="vector-groups">
+        <section>
+          <h2>DoS / Denial of Wallet</h2>
+          <label class="vector-option">
+            <input type="radio" name="payload" value="cache-bust" checked>
+            <span>Cache-busting fan-out</span>
+            <small>Unique URLs for crawler and cache-cost amplification tests.</small>
+          </label>
+          <label class="vector-option">
+            <input type="radio" name="payload" value="marker">
+            <span>Unique-request fan-out</span>
+            <small>Individually traceable requests for controlled fan-out tests.</small>
+          </label>
+        </section>
+        <section>
+          <h2>OOB attacks</h2>
+          <label class="vector-option">
+            <input type="radio" name="payload" value="blind-xss">
+            <span>Blind XSS</span>
+            <small>One-shot HTTP callback if unsafe reflection executes.</small>
+          </label>
+          <label class="vector-option">
+            <input type="radio" name="payload" value="log4j-dns">
+            <span>Log4j lookup</span>
+            <small>DNS-only callback; no class loading or command execution.</small>
+          </label>
+        </section>
+      </div>
+    </fieldset>
+    <label>Number of generated links
       <input id="count" type="number" min="1" max="1000" value="10" required>
     </label>
-    <label>Page title
-      <input id="title" value="Authorized AI crawler test">
+    <label id="callbackField" class="wide" hidden>Callback hostname or URL
+      <input id="callback" placeholder="callback.example.test">
+      <small>Bare hostnames use HTTPS for blind XSS.</small>
     </label>
-    <label>Link-text mode
-      <select id="textMode">
-        <option value="increment">Increment</option>
-        <option value="cycle">Cycle through list</option>
-        <option value="random">Random</option>
-      </select>
-    </label>
-    <label>Text template/list <small>Use {n} for the link number</small>
-      <textarea id="texts">item {n}</textarea>
-    </label>
-    <label>Payload
-      <select id="payload">
-        <option value="marker">Unique marker</option>
-        <option value="cache-bust">Cache-bust marker</option>
-        <option value="blind-xss">Basic blind-XSS callback</option>
-        <option value="log4j-dns">DNS-only Log4j marker</option>
-        <option value="custom">Custom template</option>
-      </select>
-    </label>
-    <label>Experiment token <small>Random when empty</small>
-      <input id="token" placeholder="demo-1">
-    </label>
-    <label>Payload position
-      <select id="position">
-        <option value="query">Query parameter</option>
-        <option value="path">Path segment</option>
-      </select>
-    </label>
-    <label>Query parameter
-      <input id="parameter" value="ai_bot_poc">
-    </label>
-    <label>Controlled attacker/callback host <small>Required for blind XSS and Log4j</small>
-      <input id="callback" placeholder="https://callback.example.test">
-    </label>
-    <label>Custom payload <small>{n}, {target}, {token}, {callback}</small>
-      <input id="custom" value="research-marker-{n}">
-    </label>
+    <details>
+      <summary>Advanced options</summary>
+      <div class="advanced">
+        <label>Page title
+          <input id="title" value="Authorized AI crawler test">
+        </label>
+        <label>Experiment token <small>Random when empty</small>
+          <input id="token" placeholder="demo-1">
+        </label>
+        <label>Payload position
+          <select id="position">
+            <option value="query">Query parameter</option>
+            <option value="path">Path segment</option>
+          </select>
+        </label>
+        <label>Query parameter
+          <input id="parameter" value="ai_bot_poc">
+        </label>
+        <label>Link-text mode
+          <select id="textMode">
+            <option value="increment">Increment</option>
+            <option value="cycle">Cycle through list</option>
+            <option value="random">Random</option>
+          </select>
+        </label>
+        <label>Text template/list <small>Use {n} for the link number</small>
+          <textarea id="texts">item {n}</textarea>
+        </label>
+      </div>
+    </details>
     <div id="error" role="alert" aria-live="polite"></div>
     <div class="actions">
       <button type="submit">Generate preview</button>
@@ -80,13 +118,18 @@
     </div>
   </form>
 
-  <h2>Generated source</h2>
-  <textarea id="output" readonly aria-label="Generated HTML source"></textarea>
-  <h2>Preview</h2>
-  <iframe id="preview" title="Generated page preview" sandbox></iframe>
+  <section id="results" hidden>
+    <h2>Preview</h2>
+    <iframe id="preview" title="Generated page preview" sandbox></iframe>
+    <details>
+      <summary>Generated HTML source</summary>
+      <textarea id="output" readonly aria-label="Generated HTML source"></textarea>
+    </details>
+  </section>
 
   <script>
     const byId = id => document.getElementById(id);
+    const selectedPayload = () => document.querySelector('input[name="payload"]:checked').value;
     let generated = "";
 
     function escapeHtml(value) {
@@ -104,9 +147,9 @@
       const url = new URL(value.includes("://") ? value : `https://${value}`);
       if (!['http:', 'https:'].includes(url.protocol) || !url.hostname)
         throw new Error("The callback must be an HTTP(S) URL or hostname.");
-      if (url.username || url.password || url.search || url.hash || !['', '/'].includes(url.pathname))
-        throw new Error("The callback must contain only a controlled host and optional port.");
-      return `${url.protocol}//${url.host}`;
+      if (url.username || url.password || url.search || url.hash)
+        throw new Error("The callback must not contain credentials, a query, or a fragment.");
+      return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, '')}`;
     }
 
     function callbackHost(value) {
@@ -147,7 +190,7 @@
       });
       const parameter = byId("parameter").value;
       if (!parameter || /[&=?#]/.test(parameter)) throw new Error("Enter a simple query-parameter name.");
-      const kind = byId("payload").value;
+      const kind = selectedPayload();
       const callback = byId("callback").value.trim();
       if ((kind === "blind-xss" || kind === "log4j-dns") && !callback) throw new Error("This payload requires a controlled callback.");
 
@@ -158,7 +201,7 @@
       const links = [];
       for (let n = 1; n <= count; n++) {
         const target = targets[(n - 1) % targets.length];
-        const payload = payloadFor(kind, n, target, token, callback, byId("custom").value);
+        const payload = payloadFor(kind, n, target, token, callback, "");
         const href = addPayload(target, payload, byId("position").value, parameter);
         let label = `item ${n}`;
         if (mode === "random") label = randomText();
@@ -177,20 +220,23 @@
         generated = makePage();
         byId("output").value = generated;
         byId("preview").srcdoc = generated;
+        byId("results").hidden = false;
         byId("download").disabled = false;
       } catch (error) {
         byId("error").textContent = error.message;
       }
     });
 
-    function updateCallbackRequirement() {
+    function updatePayloadUi() {
+      const kind = selectedPayload();
       const callback = byId("callback");
-      const needsCallback = ["blind-xss", "log4j-dns"].includes(byId("payload").value);
+      const needsCallback = ["blind-xss", "log4j-dns"].includes(kind);
       callback.required = needsCallback;
+      byId("callbackField").hidden = !needsCallback;
     }
 
-    byId("payload").addEventListener("change", updateCallbackRequirement);
-    updateCallbackRequirement();
+    byId("payload").addEventListener("change", updatePayloadUi);
+    updatePayloadUi();
 
     byId("download").addEventListener("click", () => {
       const url = URL.createObjectURL(new Blob([generated], {type: "text/html"}));

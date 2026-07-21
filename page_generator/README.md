@@ -49,9 +49,10 @@ uv run python page_generator/generate.py https://lab.example.test/inspect \
   --payload-param value --output poc.html
 ```
 
-Both presets require a callback host you control. The blind-XSS probe executes
-only a `fetch` beacon; the Log4j probe does not request a remote class or run a
-command.
+Both presets require a callback hostname or URL you control. A bare hostname
+uses HTTPS for the blind-XSS beacon; the Log4j probe uses only the hostname.
+The blind-XSS probe executes only a `fetch` beacon, and the Log4j probe does not
+request a remote class or run a command.
 
 Custom payload templates may use `{n}`, `{target}`, `{token}`, and `{callback}`:
 
@@ -74,3 +75,5 @@ uv run python -m http.server 8000
 
 Then visit <http://127.0.0.1:8000/>. Generation and download happen
 entirely in the browser; the interface does not request the entered targets.
+The interface groups templates into DoS/Denial-of-Wallet and OOB attack
+vectors, with uncommon controls under **Advanced options**.
