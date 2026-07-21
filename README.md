@@ -1,5 +1,8 @@
 # AI bot exposure research toolkit
 
+[Open the live attack-vector generator](https://atom41research.github.io/ai-data-collection-abuse/)
+for authorized testing.
+
 Small, auditable tools supporting the research described in *Playing with AI
 Data Collection Bots for Fun and Profit*. Each tool lives in its own folder and
 has its own usage guide.

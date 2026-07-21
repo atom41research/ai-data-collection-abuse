@@ -31,6 +31,9 @@
     small { font-weight: 400; }
     #results { margin-top: 2rem; }
     #results details { margin-top: 1rem; }
+    .next-steps { border-left: .3rem solid #607d8b; padding: .2rem 1rem; margin: 1.5rem 0; }
+    .next-steps h2 { margin-top: 0; }
+    .next-steps li { margin: .45rem 0; }
     [hidden] { display: none !important; }
     @media (max-width: 45rem) { form, .advanced, .vector-groups { grid-template-columns: 1fr; } }
   </style>
@@ -38,6 +41,18 @@
 <body>
   <h1>AI crawler attack-vector generator</h1>
   <p>Generate a bounded static test page. Everything runs locally in this browser.</p>
+  <aside class="next-steps" aria-label="Authorized testing workflow">
+    <h2>Next steps for authorized testing</h2>
+    <ol>
+      <li>Create a new subdomain you own and configure a valid TLS certificate for it.</li>
+      <li>Upload the generated HTML to that live HTTPS subdomain.</li>
+      <li>Monitor your subdomain and callback-service logs for crawler requests.</li>
+      <li>Monitor the authorized target site's logs for requests from crawlers that followed the generated links.</li>
+    </ol>
+    <p>Results depend on which AI crawlers are still susceptible and on their current
+      patches. This page does not upload files, issue certificates, trigger crawlers,
+      or contact targets. Test only systems for which you have explicit permission.</p>
+  </aside>
 
   <form id="generator">
     <label class="wide">Authorized target URLs, one per line
