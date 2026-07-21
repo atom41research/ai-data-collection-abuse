@@ -11,7 +11,7 @@ The built-in payloads are detection-only:
 
 - `marker`: a unique query value;
 - `cache-bust`: a unique value useful for checking cache-key behavior at low volume;
-- `blind-xss`: a passive image callback marker (no JavaScript);
+- `blind-xss`: a basic event-handler injection that runs only a one-shot HTTP callback;
 - `log4j-dns`: a DNS-only JNDI callback marker (no codebase or class loading).
 
 Generate incrementing labels:
@@ -37,9 +37,21 @@ Use an OOB detection marker on a lab target and callback service you control:
 
 ```bash
 uv run python page_generator/generate.py https://lab.example.test/search \
-  --count 10 --payload blind-xss --callback https://callback.example.test \
+  --count 10 --payload blind-xss --callback callback.example.test \
   --payload-param q --output poc.html
 ```
+
+Or generate a DNS-only Log4j probe:
+
+```bash
+uv run python page_generator/generate.py https://lab.example.test/inspect \
+  --payload log4j-dns --callback dns.callback.example.test \
+  --payload-param value --output poc.html
+```
+
+Both presets require a callback host you control. The blind-XSS probe executes
+only a `fetch` beacon; the Log4j probe does not request a remote class or run a
+command.
 
 Custom payload templates may use `{n}`, `{target}`, `{token}`, and `{callback}`:
 

