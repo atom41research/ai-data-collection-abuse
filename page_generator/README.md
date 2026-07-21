@@ -9,10 +9,15 @@ CLI examples with `uv run` when using the repository's uv environment.
 
 The built-in payloads are detection-only:
 
-- `marker`: a unique query value;
-- `cache-bust`: a unique value useful for checking cache-key behavior at low volume;
-- `blind-xss`: a basic event-handler injection that runs only a one-shot HTTP callback;
-- `log4j-dns`: a DNS-only JNDI callback marker (no codebase or class loading).
+- `marker`: 1,000 traceable request-value layouts;
+- `cache-bust`: 1,000 unique cache-busting value layouts;
+- `blind-xss`: 1,000 combinations of breakout contexts, event handlers, and
+  one-shot callback methods;
+- `log4j-dns`: 1,000 DNS-only JNDI lookup obfuscations (no codebase or class loading).
+
+The default and maximum page size is 1,000 links, so no payload layout repeats
+within one generated page. Lower `--count` when a smaller authorized test is
+enough.
 
 Generate incrementing labels:
 
